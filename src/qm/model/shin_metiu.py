@@ -31,7 +31,7 @@ class Shin_Metiu(Model):
         self.Rl = Rl
         self.Rr = Rr
 
-        self.dx = (self.xmax - self.xmin) / np.float(self.nx - 1)
+        self.dx = (self.xmax - self.xmin) / np.float64(self.nx - 1)
         self.H = np.zeros((self.nx, self.nx))
 
         # Set 'l_nacme' with respect to the computational method

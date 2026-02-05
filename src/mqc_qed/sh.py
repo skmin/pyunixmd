@@ -1,7 +1,7 @@
 from __future__ import division
 from lib.libmqc_qed import el_run
 from mqc_qed.mqc import MQC_QED
-from misc import eps, au_to_K, call_name, typewriter
+from misc import eps, au_to_K, call_name, typewriter, close_files
 import random, os, shutil, textwrap
 import numpy as np
 import pickle
@@ -238,6 +238,9 @@ class SH(MQC_QED):
             restart_file = os.path.join(base_dir, "RESTART.bin")
             with open(restart_file, 'wb') as f:
                 pickle.dump({'qed':qed, 'qm':qm, 'md':self}, f)
+
+        # Close open file handles for this directory
+        close_files(unixmd_dir)
 
         # Delete scratch directory
         if (not l_save_scr):

@@ -1,7 +1,7 @@
 from __future__ import division
 from lib.libctmqc import el_run
 from mqc.mqc import MQC
-from misc import eps, au_to_K, au_to_A, call_name, typewriter, gaussian1d
+from misc import eps, au_to_K, au_to_A, call_name, typewriter, gaussian1d, close_files
 import os, shutil, textwrap
 import numpy as np
 import pickle
@@ -216,6 +216,10 @@ class CT(MQC):
             restart_file = os.path.join(abs_path_output_dir, "RESTART.bin")
             with open(restart_file, 'wb') as f:
                 pickle.dump({'qm':qm, 'md':self}, f)
+
+        # Close open file handles for all trajectory directories
+        for itraj in range(self.ntrajs):
+            close_files(unixmd_dirs[itraj])
 
         # Delete scratch directory
         if (not l_save_scr):

@@ -37,16 +37,14 @@ You can build PyUNIxMD by the following command.
 
 :: 
 
-  $ python3 setup.py build_ext -b ./src/lib/
+  $ python3 setup.py build_ext -b ./lib/
 
-Test
-====
-Without the aid of external QM programs, You can test the PyUNIxMD package with model systems.
+Examples
+========
+Without the aid of external QM programs, you can try the PyUNIxMD package with model systems.
 The corresponding examples are:
 
-* $PYUNIXMDHOME/examples/qm/Eh-Shin_Metiu
-
-* $PYUNIXMDHOME/examples/qm/SHXF-SAC
+* $PYUNIXMDHOME/examples/qm/SH-Shin_Metiu
 
 * $PYUNIXMDHOME/examples/qm/SHXF-Shin_Metiu
 
@@ -54,17 +52,36 @@ $PYUNIXMDHOME is the top-level directory where this file belongs.
 
 In each directory, you can find the running script named run.py.
 
-Before running test jobs, add the path of the PyUNIxMD package to your Python path.
+Before running example jobs, add the path of the PyUNIxMD package to your Python path.
 
 ::
 
-  $ export PYTHONPATH=$PYUNIXMDHOME/src:$PYTHONPATH
+  $ export PYTHONPATH=$PYUNIXMDHOME/src:$PYUNIXMDHOME:$PYTHONPATH
 
 Then execute run.py as follows.
 
 ::
 
   $ python3 run.py >& log
+
+Test
+====
+PyUNIxMD provides pytest-based tests in the $PYUNIXMDHOME/tests directory.
+To run the tests, first set up the Python path and then use pytest.
+
+::
+
+  $ export PYTHONPATH=$PYUNIXMDHOME/src:$PYUNIXMDHOME:$PYTHONPATH
+  $ cd $PYUNIXMDHOME/tests
+  $ pytest -v
+
+You can also run specific test categories using markers:
+
+::
+
+  $ pytest -m mqc -v      # Run all MQC tests
+  $ pytest -m shxf -v     # Run only SHXF tests
+  $ pytest -m bomd -v     # Run only BOMD tests
 
 Utility scripts
 ===============

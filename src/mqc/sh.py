@@ -240,17 +240,16 @@ class SH(MQC):
 
         self.l_hop = False
 
-        accum = 0.
+        rstate = self.rstate
+        rho_rstate = self.mol.rho.real[rstate, rstate]
 
-        for ist in range(self.mol.nst):
-            if (ist != self.rstate):
-                self.prob[ist] = - 2. * self.mol.rho.real[ist, self.rstate] * \
-                    self.mol.nacme[ist, self.rstate] * self.dt / self.mol.rho.real[self.rstate, self.rstate]
+        # Vectorized probability calculation
+        self.prob = -2. * self.mol.rho.real[:, rstate] * self.mol.nacme[:, rstate] * self.dt / rho_rstate
+        self.prob[rstate] = 0.  # Zero out self-transition
+        self.prob = np.maximum(self.prob, 0.)  # Clip negative values
 
-                if (self.prob[ist] < 0.):
-                    self.prob[ist] = 0.
-                accum += self.prob[ist]
-            self.acc_prob[ist + 1] = accum
+        # Cumulative sum for accumulated probabilities
+        self.acc_prob[1:] = np.cumsum(self.prob)
         psum = self.acc_prob[self.mol.nst]
 
         if (psum > 1.):

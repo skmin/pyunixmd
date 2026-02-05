@@ -270,37 +270,30 @@ class SH(MQC_QED):
 
         self.l_hop = False
 
-        accum = 0.
+        rstate = self.rstate
+        rho_a_rstate = self.pol.rho_a.real[rstate, rstate]
 
         # tmp_ham = U^+ * H * U
-        tmp_ham = np.zeros((self.pol.pst, self.pol.pst)) 
         tmp_ham = np.matmul(np.transpose(qed.unitary), np.matmul(qed.ham_d, qed.unitary))
         # self.pol.pnacme = U^+ * K * U + U^+ * U_dot
         # H and K are Hamiltonian and NACME in uncoupled basis
 
         if (not qed.l_trivial):
-            for ist in range(self.pol.pst):
-                if (ist != self.rstate):
-                    self.prob[ist] = - 2. * (self.pol.rho_a.imag[self.rstate, ist] * tmp_ham[self.rstate, ist] \
-                        - self.pol.rho_a.real[self.rstate, ist] * self.pol.pnacme[self.rstate, ist]) \
-                        * self.dt / self.pol.rho_a.real[self.rstate, self.rstate]
+            # Vectorized probability calculation
+            self.prob = -2. * (self.pol.rho_a.imag[rstate, :] * tmp_ham[rstate, :] \
+                - self.pol.rho_a.real[rstate, :] * self.pol.pnacme[rstate, :]) \
+                * self.dt / rho_a_rstate
 
-                    if (self.prob[ist] < 0.):
-                        self.prob[ist] = 0.
-                    accum += self.prob[ist]
-                self.acc_prob[ist + 1] = accum
-            psum = self.acc_prob[self.pol.pst]
+            self.prob[rstate] = 0.  # Zero out self-transition
+            self.prob = np.maximum(self.prob, 0.)  # Clip negative values
         else:
-            for ist in range(self.pol.pst):
-                if (ist != self.rstate):
-                    if (ist == qed.trivial_state):
-                        self.prob[ist] = 1.
-                    else:
-                        self.prob[ist] = 0.
+            # Trivial crossing: set probability to 1 for trivial_state
+            self.prob[qed.trivial_state] = 1.
+            self.prob[rstate] = 0.  # Zero out self-transition (in case trivial_state == rstate)
 
-                    accum += self.prob[ist]
-                self.acc_prob[ist + 1] = accum
-            psum = self.acc_prob[self.pol.pst]
+        # Cumulative sum for accumulated probabilities
+        self.acc_prob[1:] = np.cumsum(self.prob)
+        psum = self.acc_prob[self.pol.pst]
 
         if (psum > 1.):
             self.prob /= psum

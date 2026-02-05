@@ -511,7 +511,7 @@ class CT(MQC):
         ratio_sum = np.sum(ratio_lk, axis=0)  # (nst_pair, nat_qm, ndim)
 
         # Broadcast to all trajectories
-        center_old_lk = np.broadcast_to(ratio_sum, (self.ntrajs, self.nst_pair, self.nat_qm, self.ndim)).copy()
+        center_old_lk = np.broadcast_to(ratio_sum, (self.ntrajs, self.nst_pair, self.nat_qm, self.ndim))
 
         # Apply fallback where slope is small or center is zero
         slope_small = np.abs(self.slope_i) <= self.small  # (ntrajs, nat_qm, ndim)
@@ -543,7 +543,7 @@ class CT(MQC):
 
         # Expand to all state pairs (center_new is independent of state pair)
         center_new_lk = np.broadcast_to(center_new_base[:, np.newaxis, :, :],
-                                         (self.ntrajs, self.nst_pair, self.nat_qm, self.ndim)).copy()
+                                         (self.ntrajs, self.nst_pair, self.nat_qm, self.ndim))
 
         # Apply fallback where slope is small
         center_new_lk = np.where(slope_small_expanded, pos_expanded, center_new_lk)

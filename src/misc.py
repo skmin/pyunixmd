@@ -74,6 +74,7 @@ class FileManager:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._handles = {}
+            cls._instance._validated_paths = {}
             # Register cleanup on program exit
             atexit.register(cls._instance.close_all)
         return cls._instance
@@ -86,6 +87,11 @@ class FileManager:
             :returns: Validated absolute path
             :raises ValueError: If path traversal is detected
         """
+        # Check cache first
+        key = (dir_name, filename)
+        if key in self._validated_paths:
+            return self._validated_paths[key]
+
         # Normalize and get absolute paths
         abs_dir = os.path.abspath(dir_name)
         tmp_name = os.path.normpath(os.path.join(abs_dir, filename))
@@ -94,6 +100,8 @@ class FileManager:
         if not tmp_name.startswith(abs_dir + os.sep) and tmp_name != abs_dir:
             raise ValueError(f"Path traversal detected: {filename} escapes {dir_name}")
 
+        # Cache the validated path
+        self._validated_paths[key] = tmp_name
         return tmp_name
 
     def write(self, string, dir_name, filename, mode):

@@ -299,8 +299,8 @@ class SHXF(MQC):
         # Reset surface hopping variables
         self.rstate_old = self.rstate
 
-        self.prob = np.zeros(self.mol.nst)
-        self.acc_prob = np.zeros(self.mol.nst + 1)
+        self.prob.fill(0.)
+        self.acc_prob.fill(0.)
 
         self.l_hop = False
         self.force_hop = False

@@ -125,8 +125,8 @@ class Shin_Metiu(Model):
         # Nuclear repulsion terms (1/r diverges, use safe denominator)
         x_r = np.abs(x - 0.5 * self.L)
         x_l = np.abs(x + 0.5 * self.L)
-        x_r_safe = np.where(x_r > eps, x_r, 1.)
-        x_l_safe = np.where(x_l > eps, x_l, 1.)
+        x_r_safe = np.where(x_r > eps, x_r, eps)
+        x_l_safe = np.where(x_l > eps, x_l, eps)
 
         V += V_r + V_l + 1. / x_r_safe + 1. / x_l_safe
 
@@ -150,8 +150,8 @@ class Shin_Metiu(Model):
         # Safe denominators for fixed nuclei terms
         x_r = np.abs(x - 0.5 * self.L)
         x_l = np.abs(x + 0.5 * self.L)
-        x_r_safe = np.where(x_r > eps, x_r, 1.)
-        x_l_safe = np.where(x_l > eps, x_l, 1.)
+        x_r_safe = np.where(x_r > eps, x_r, eps)
+        x_l_safe = np.where(x_l > eps, x_l, eps)
 
         dV -= ((x - 0.5 * self.L) / x_r_safe ** 3
                + (x + 0.5 * self.L) / x_l_safe ** 3)

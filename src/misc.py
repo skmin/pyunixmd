@@ -87,18 +87,21 @@ class FileManager:
             :returns: Validated absolute path
             :raises ValueError: If path traversal is detected
         """
-        # Check cache first
-        key = (dir_name, filename)
+        # Resolve directory first to ensure cache key is consistent
+        # regardless of relative paths or current working directory
+        abs_dir = os.path.realpath(dir_name)
+
+        # Check cache using resolved path as key
+        key = (abs_dir, filename)
         if key in self._validated_paths:
             return self._validated_paths[key]
 
-        # Normalize and get absolute paths
-        abs_dir = os.path.abspath(dir_name)
-        tmp_name = os.path.normpath(os.path.join(abs_dir, filename))
+        # Resolve symlinks and get canonical path for file
+        tmp_name = os.path.realpath(os.path.join(abs_dir, filename))
 
         # Security check: ensure the resulting path is within the target directory
         if not tmp_name.startswith(abs_dir + os.sep) and tmp_name != abs_dir:
-            raise ValueError(f"Path traversal detected: {filename} escapes {dir_name}")
+            raise ValueError(f"Path traversal or symlink attack detected: {filename} escapes {dir_name}")
 
         # Cache the validated path
         self._validated_paths[key] = tmp_name
@@ -144,8 +147,8 @@ class FileManager:
 
             :param string dir_name: Directory path
         """
-        # Normalize directory path and ensure proper matching with trailing separator
-        abs_dir = os.path.abspath(dir_name)
+        # Resolve symlinks and ensure proper matching with trailing separator
+        abs_dir = os.path.realpath(dir_name)
         dir_prefix = abs_dir + os.sep
 
         to_close = [path for path in self._handles

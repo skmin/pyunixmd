@@ -325,27 +325,31 @@ class Polariton(object):
     def get_nacme(self):
         """ Get NACME from nonadiabatic couplings
         """
-        for ist in range(self.nst):
-            for jst in range(ist + 1, self.nst):
-                self.nacme[ist, jst] = np.sum(self.nac[ist, jst] * self.vel[0:self.nat_qm])
-                self.nacme[jst, ist] = - self.nacme[ist, jst]
+        # Vectorized: contract nac with velocity over atom and coordinate indices
+        vel_qm = self.vel[0:self.nat_qm]
+        nacme_full = np.tensordot(self.nac, vel_qm, axes=([2, 3], [0, 1]))
+        # Enforce antisymmetry: nacme[i,j] = -nacme[j,i], diagonal = 0
+        self.nacme = np.triu(nacme_full, k=1)
+        self.nacme -= self.nacme.T
 
     def get_pnacme(self):
         """ Get pNACME from polaritonic nonadiabatic couplings
         """
-        for ist in range(self.pst):
-            for jst in range(ist + 1, self.pst):
-                self.pnacme[ist, jst] = np.sum(self.pnac[ist, jst] * self.vel[0:self.nat_qm])
-                self.pnacme[jst, ist] = - self.pnacme[ist, jst]
+        # Vectorized: contract pnac with velocity over atom and coordinate indices
+        vel_qm = self.vel[0:self.nat_qm]
+        pnacme_full = np.tensordot(self.pnac, vel_qm, axes=([2, 3], [0, 1]))
+        # Enforce antisymmetry: pnacme[i,j] = -pnacme[j,i], diagonal = 0
+        self.pnacme = np.triu(pnacme_full, k=1)
+        self.pnacme -= self.pnacme.T
 
     def update_kinetic(self):
         """ Get kinetic energy
         """
-        self.ekin = np.sum(0.5 * self.mass * np.sum(self.vel ** 2, axis=1))
+        self.ekin = 0.5 * np.einsum('i,ij->', self.mass, self.vel ** 2)
 
         if (self.l_qmmm):
             # Calculate the kinetic energy for QM atoms
-            self.ekin_qm = np.sum(0.5 * self.mass[0:self.nat_qm] * np.sum(self.vel[0:self.nat_qm] ** 2, axis=1))
+            self.ekin_qm = 0.5 * np.einsum('i,ij->', self.mass[0:self.nat_qm], self.vel[0:self.nat_qm] ** 2)
         else:
             self.ekin_qm = self.ekin
 

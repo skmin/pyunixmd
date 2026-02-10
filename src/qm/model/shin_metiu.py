@@ -89,10 +89,14 @@ class Shin_Metiu(Model):
         for ist in range(molecule.nst):
             molecule.states[ist].force = Fs[ist]
 
-        for ist in range(molecule.nst):
-            for jst in range(ist + 1, molecule.nst):
-                molecule.nac[ist, jst, 0, 0] = dVijs[ist, jst] / (ws[jst] - ws[ist])
-                molecule.nac[jst, ist, 0, 0] = - molecule.nac[ist, jst, 0, 0]
+        # Vectorized NAC calculation: dVijs / (ws[j] - ws[i])
+        energy_diff = ws[np.newaxis, :] - ws[:, np.newaxis]  # energy_diff[i,j] = ws[j] - ws[i]
+        # Avoid division by zero on diagonal by setting it to 1 (result will be zeroed anyway)
+        energy_diff_safe = np.where(energy_diff != 0, energy_diff, 1.)
+        nac_full = dVijs / energy_diff_safe
+        # Enforce antisymmetry: keep upper triangle and subtract transpose
+        nac_upper = np.triu(nac_full, k=1)
+        molecule.nac[:, :, 0, 0] = nac_upper - nac_upper.T
 
     def get_V(self, x, xes):
         """ Calculate potential elements of the BO Hamiltonian (vectorized)

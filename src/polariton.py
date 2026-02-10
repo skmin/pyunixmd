@@ -265,62 +265,42 @@ class Polariton(object):
         self.vel = np.array(self.vel) * fac_vel
 
     def adjust_nac(self):
-        """ Adjust phase of nonadiabatic couplings
+        """ Adjust phase of nonadiabatic couplings (vectorized)
         """
-        for ist in range(self.nst):
-            for jst in range(ist, self.nst):
-                ovlp = 0.
-                snac_old = 0.
-                snac = 0.
-
-                snac_old = np.sum(self.nac_old[ist, jst] ** 2)
-                snac = np.sum(self.nac[ist, jst] ** 2)
-
-                snac_old = np.sqrt(snac_old)
-                snac = np.sqrt(snac)
-
-                if (np.sqrt(snac * snac_old) < eps):
-                    ovlp = 1.
-                else:
-                    dot_nac = 0.
-                    dot_nac = np.sum(self.nac_old[ist, jst] * self.nac[ist, jst])
-                    ovlp = dot_nac / snac / snac_old
-
-                if (ovlp < 0.):
-                    self.nac[ist, jst] = - self.nac[ist, jst]
-                    self.nac[jst, ist] = - self.nac[jst, ist]
+        # Compute norms for all state pairs: sum over atom and coordinate axes
+        snac_old = np.sqrt(np.sum(self.nac_old ** 2, axis=(2, 3)))  # (nst, nst)
+        snac = np.sqrt(np.sum(self.nac ** 2, axis=(2, 3)))  # (nst, nst)
+        # Compute dot products for all state pairs
+        dot_nac = np.sum(self.nac_old * self.nac, axis=(2, 3))  # (nst, nst)
+        # Compute overlap, avoiding division by zero
+        norm_prod = snac * snac_old
+        ovlp = np.where(norm_prod < eps, 1., dot_nac / np.maximum(norm_prod, eps))
+        # Create sign matrix: -1 where overlap < 0, +1 otherwise (upper triangle)
+        sign_upper = np.where(np.triu(ovlp, k=0) < 0., -1., 1.)
+        # Symmetrize the sign matrix
+        sign_matrix = np.triu(sign_upper, k=1) + np.triu(sign_upper, k=1).T + np.diag(np.diag(sign_upper))
+        # Apply sign flip
+        self.nac *= sign_matrix[:, :, np.newaxis, np.newaxis]
 
     def adjust_tdp(self):
-        """ Adjust phase of transition dipole moments
+        """ Adjust phase of transition dipole moments (vectorized)
         """
-        for ist in range(self.nst):
-            for jst in range(ist, self.nst):
-                ovlp = 0.
-                stdp_old = 0.
-                stdp = 0.
-
-                stdp_old = np.sum(self.tdp_old[ist, jst] ** 2)
-                stdp = np.sum(self.tdp[ist, jst] ** 2)
-
-                stdp_old = np.sqrt(stdp_old)
-                stdp = np.sqrt(stdp)
-
-                if (np.sqrt(stdp * stdp_old) < eps):
-                    ovlp = 1.
-                else:
-                    dot_tdp = 0.
-                    dot_tdp = np.sum(self.tdp_old[ist, jst] * self.tdp[ist, jst])
-                    ovlp = dot_tdp / stdp / stdp_old
-
-                if (ovlp < 0.):
-                    self.tdp[ist, jst] = - self.tdp[ist, jst]
-                    self.tdp[jst, ist] = - self.tdp[jst, ist]
-                    self.tdp_grad[ist, jst, 0] = - self.tdp_grad[ist, jst, 0]
-                    self.tdp_grad[ist, jst, 1] = - self.tdp_grad[ist, jst, 1]
-                    self.tdp_grad[ist, jst, 2] = - self.tdp_grad[ist, jst, 2]
-                    self.tdp_grad[jst, ist, 0] = - self.tdp_grad[jst, ist, 0]
-                    self.tdp_grad[jst, ist, 1] = - self.tdp_grad[jst, ist, 1]
-                    self.tdp_grad[jst, ist, 2] = - self.tdp_grad[jst, ist, 2]
+        # Compute norms for all state pairs: sum over coordinate axis
+        stdp_old = np.sqrt(np.sum(self.tdp_old ** 2, axis=2))  # (nst, nst)
+        stdp = np.sqrt(np.sum(self.tdp ** 2, axis=2))  # (nst, nst)
+        # Compute dot products for all state pairs
+        dot_tdp = np.sum(self.tdp_old * self.tdp, axis=2)  # (nst, nst)
+        # Compute overlap, avoiding division by zero
+        norm_prod = stdp * stdp_old
+        ovlp = np.where(norm_prod < eps, 1., dot_tdp / np.maximum(norm_prod, eps))
+        # Create sign matrix: -1 where overlap < 0, +1 otherwise (upper triangle)
+        sign_upper = np.where(np.triu(ovlp, k=0) < 0., -1., 1.)
+        # Symmetrize the sign matrix
+        sign_matrix = np.triu(sign_upper, k=1) + np.triu(sign_upper, k=1).T + np.diag(np.diag(sign_upper))
+        # Apply sign flip to tdp
+        self.tdp *= sign_matrix[:, :, np.newaxis]
+        # Apply sign flip to tdp_grad
+        self.tdp_grad *= sign_matrix[:, :, np.newaxis, np.newaxis, np.newaxis]
 
     def get_nacme(self):
         """ Get NACME from nonadiabatic couplings

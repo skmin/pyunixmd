@@ -235,9 +235,13 @@ class CT(MQC):
         """
         self.rforce = np.zeros((self.nat_qm, self.ndim))
 
-        # Derivatives of energy
-        for ist, istate in enumerate(self.mols[itrajectory].states):
-            self.rforce += istate.force * self.mol.rho.real[ist, ist]
+        # Derivatives of energy (vectorized)
+        forces = np.array([st.force for st in self.mols[itrajectory].states])
+        rho_diag = np.diag(self.mol.rho.real)
+        if forces.ndim == 1:
+            self.rforce = np.sum(rho_diag * forces)
+        else:
+            self.rforce = np.einsum('i,i...->...', rho_diag, forces)
 
         # Non-adiabatic forces (vectorized)
         energies = np.array([st.energy for st in self.mol.states])
@@ -267,9 +271,9 @@ class CT(MQC):
         """
         # Update kinetic energy
         self.mol.update_kinetic()
-        self.mol.epot = 0.
-        for ist, istate in enumerate(self.mol.states):
-            self.mol.epot += self.mol.rho.real[ist, ist] * istate.energy
+        # Potential energy (vectorized)
+        energies = np.array([st.energy for st in self.mol.states])
+        self.mol.epot = np.sum(np.diag(self.mol.rho.real) * energies)
         
         if (self.l_en_cons and not (self.istep == -1)):
             alpha = (self.mol.etot - self.mol.epot)
@@ -285,12 +289,21 @@ class CT(MQC):
 
             :param integer itrajectory: Index for trajectories
         """
-        for ist in range(self.nst):
-            rho = self.mol.rho[ist, ist].real
-            if (rho > self.upper_th or rho < self.lower_th):
-                self.phase[itrajectory, ist] = np.zeros((self.nat_qm, self.ndim))
-            else:
-                self.phase[itrajectory, ist] += self.mol.states[ist].force * self.dt
+        # Vectorized phase calculation
+        rho_diag = np.diag(self.mol.rho.real)  # (nst,)
+        outside_threshold = (rho_diag > self.upper_th) | (rho_diag < self.lower_th)  # (nst,)
+        forces = np.array([st.force for st in self.mol.states])  # (nst,) or (nst, nat_qm, ndim)
+
+        # Handle 1D vs 3D force shapes
+        if forces.ndim == 1:
+            # 1D model: force is scalar per state
+            phase_update = forces[:, np.newaxis, np.newaxis] * self.dt
+        else:
+            phase_update = forces * self.dt
+
+        # Zero phase where outside threshold, otherwise add phase update
+        self.phase[itrajectory] = np.where(outside_threshold[:, np.newaxis, np.newaxis],
+                                            0., self.phase[itrajectory] + phase_update)
 
     def check_decoherence(self, itrajectory):
         """ Routine to check decoherence among BO states
@@ -312,13 +325,14 @@ class CT(MQC):
         """
         self.mol.rho = np.zeros((self.mol.nst, self.mol.nst), dtype=np.complex64)
         self.mol.rho[one_st, one_st] = 1. + 0.j
-        
+
         if (self.elec_object == "coefficient"):
+            # Vectorized coefficient reset
+            coefs = np.array([st.coef for st in self.mol.states])
+            coefs_new = np.where(np.arange(self.mol.nst) == one_st,
+                                  coefs / np.abs(coefs).real, 0. + 0.j)
             for ist in range(self.mol.nst):
-                if (ist == one_st):
-                    self.mol.states[ist].coef /= np.absolute(self.mol.states[ist].coef).real
-                else:
-                    self.mol.states[ist].coef = 0. + 0.j
+                self.mol.states[ist].coef = coefs_new[ist]
 
     def calculate_qmom(self, istep):
         """ Routine to calculate quantum momentum
@@ -337,25 +351,31 @@ class CT(MQC):
         # 3. Calculate the center of quantum momentum
         self.calculate_center()
 
-        # 4. Compute quantum momentum
-        for itraj in range(self.ntrajs):
-            index_lk = -1
-            for ist in range(self.nst):
-                for jst in range(ist + 1, self.nst):
-                    index_lk += 1
-                    self.qmom[itraj, index_lk] = self.slope_i[itraj] * (self.mols[itraj].pos - self.center_lk[itraj, index_lk])
+        # 4. Compute quantum momentum (vectorized)
+        # Build position array for all trajectories: (ntrajs, nat_qm, ndim)
+        all_pos_qmom = np.array([self.mols[itraj].pos[0:self.nat_qm] for itraj in range(self.ntrajs)])
+        # slope_i: (ntrajs, nat_qm, ndim), center_lk: (ntrajs, nst_pair, nat_qm, ndim)
+        # Expand all_pos to (ntrajs, nst_pair, nat_qm, ndim)
+        all_pos_expanded = all_pos_qmom[:, np.newaxis, :, :]
+        self.qmom = self.slope_i[:, np.newaxis, :, :] * (all_pos_expanded - self.center_lk)
 
-        # 5. Calculate 2 * Qmom * phase / mass
+        # 5. Calculate 2 * Qmom * phase / mass (fully vectorized)
         self.K_lk = np.zeros((self.ntrajs, self.nst, self.nst))
-        for itraj in range(self.ntrajs):
-            index_lk = -1
-            for ist in range(self.nst):
-                for jst in range(ist + 1, self.nst):
-                    index_lk += 1
-                    self.K_lk[itraj, ist, jst] += 2. * np.sum(1. / self.mol.mass[0:self.nat_qm] * \
-                        np.sum(self.qmom[itraj, index_lk] * self.phase[itraj, ist], axis = 1))
-                    self.K_lk[itraj, jst, ist] += 2. * np.sum(1. / self.mol.mass[0:self.nat_qm] * \
-                        np.sum(self.qmom[itraj, index_lk] * self.phase[itraj, jst], axis = 1))
+        mass_inv = 1. / self.mol.mass[0:self.nat_qm]  # (nat_qm,)
+        triu_idx = np.triu_indices(self.nst, k=1)
+        # qmom: (ntrajs, nst_pair, nat_qm, ndim), phase: (ntrajs, nst, nat_qm, ndim)
+        # Index phase by state pairs
+        phase_ist = self.phase[:, triu_idx[0], :, :]  # (ntrajs, nst_pair, nat_qm, ndim)
+        phase_jst = self.phase[:, triu_idx[1], :, :]  # (ntrajs, nst_pair, nat_qm, ndim)
+        # Sum over dims
+        qmom_phase_ist = np.sum(self.qmom * phase_ist, axis=-1)  # (ntrajs, nst_pair, nat_qm)
+        qmom_phase_jst = np.sum(self.qmom * phase_jst, axis=-1)  # (ntrajs, nst_pair, nat_qm)
+        # Weighted sum over atoms
+        K_ist = 2. * np.einsum('i,tpi->tp', mass_inv, qmom_phase_ist)  # (ntrajs, nst_pair)
+        K_jst = 2. * np.einsum('i,tpi->tp', mass_inv, qmom_phase_jst)  # (ntrajs, nst_pair)
+        # Assign to K_lk matrix
+        self.K_lk[:, triu_idx[0], triu_idx[1]] = K_ist
+        self.K_lk[:, triu_idx[1], triu_idx[0]] = K_jst
 
     def calculate_sigma(self, istep):
         """ Routine to calculate variances for each trajectories
@@ -454,15 +474,11 @@ class CT(MQC):
         # Shape: (ntrajs, nst)
         self.w_k = np.einsum('ij,jk->ik', self.prod_g_i, rho_diag) / self.g_i[:, np.newaxis]
 
-        # Apply smoothing: zero phase where w_k is outside threshold
-        for itraj in range(self.ntrajs):
-            for ist in range(self.nst):
-                for jst in range(ist + 1, self.nst):
-                    l_smooth = ((self.w_k[itraj, ist] < self.lower_th) or (self.w_k[itraj, ist] > self.upper_th)
-                        or (self.w_k[itraj, jst] < self.lower_th) or (self.w_k[itraj, jst] > self.upper_th))
-                    if l_smooth:
-                        self.phase[itraj, ist, :, :] = 0.
-                        self.phase[itraj, jst, :, :] = 0.
+        # Apply smoothing: zero phase where w_k is outside threshold (vectorized)
+        # If any state's w_k is outside threshold, zero all phases for that trajectory
+        outside_threshold = (self.w_k < self.lower_th) | (self.w_k > self.upper_th)  # (ntrajs, nst)
+        any_outside = np.any(outside_threshold, axis=1)  # (ntrajs,)
+        self.phase[any_outside] = 0.
 
         # (2-2) Calculate slope_i
         # slope_i[itraj] = -sum_jtraj(w_ij[itraj, jtraj])
@@ -477,15 +493,10 @@ class CT(MQC):
         # Build position array: (ntrajs, nat_qm, ndim)
         all_pos = np.array([self.mols[itraj].pos[0:self.nat_qm] for itraj in range(self.ntrajs)])
 
-        # Build state pair indices
-        ist_indices = []
-        jst_indices = []
-        for ist in range(self.nst):
-            for jst in range(ist + 1, self.nst):
-                ist_indices.append(ist)
-                jst_indices.append(jst)
-        ist_arr = np.array(ist_indices)
-        jst_arr = np.array(jst_indices)
+        # Build state pair indices (vectorized)
+        triu_idx = np.triu_indices(self.nst, k=1)
+        ist_arr = triu_idx[0]
+        jst_arr = triu_idx[1]
 
         # (3-1) Compute denominator
         # deno_lk[index_lk, iat, idim] = sum_itraj(rho[itraj,ist] * rho[itraj,jst] * phase_diff * slope_i)

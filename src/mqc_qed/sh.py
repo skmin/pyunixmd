@@ -436,20 +436,20 @@ class SH(MQC_QED):
         rho_update = 1.
 
         if (self.elec_object == "coefficient"):
-            # Update coefficients
-            for ist in range(self.pol.pst):
-                # self.pol.pol_states[self.rstate] need other updated coefficients
-                if (ist != self.rstate):
-                    self.pol.pol_states[ist].coef_a *= exp_tau[ist]
-                    rho_update -= self.pol.pol_states[ist].coef_a.conjugate() * self.pol.pol_states[ist].coef_a
+            # Update coefficients (vectorized)
+            coefs = np.array([st.coef_a for st in self.pol.pol_states])
+            mask = np.arange(self.pol.pst) != self.rstate
+            coefs[mask] *= exp_tau[mask]
+            rho_update -= np.sum(np.abs(coefs[mask]) ** 2)
 
-            self.pol.pol_states[self.rstate].coef_a *= np.sqrt(rho_update / self.pol.rho_a[self.rstate, self.rstate])
+            coefs[self.rstate] *= np.sqrt(rho_update / self.pol.rho_a[self.rstate, self.rstate])
 
-            # Get density matrix elements from coefficients
+            # Write back coefficients
             for ist in range(self.pol.pst):
-                for jst in range(ist, self.pol.pst):
-                    self.pol.rho_a[ist, jst] = self.pol.pol_states[ist].coef_a.conjugate() * self.pol.pol_states[jst].coef_a
-                    self.pol.rho_a[jst, ist] = self.pol.rho_a[ist, jst].conjugate()
+                self.pol.pol_states[ist].coef_a = coefs[ist]
+
+            # Get density matrix elements from coefficients (vectorized outer product)
+            self.pol.rho_a = np.outer(coefs.conj(), coefs)
 
 #        elif (self.elec_object == "density"):
 #            # save old running state element for update running state involved elements

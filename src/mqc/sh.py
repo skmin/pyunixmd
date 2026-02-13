@@ -390,39 +390,39 @@ class SH(MQC):
         rho_update = 1.
 
         if (self.elec_object == "coefficient"):
-            # Update coefficients
-            for ist in range(self.mol.nst):
-                # self.mol.states[self.rstate] need other updated coefficients
-                if (ist != self.rstate):
-                    self.mol.states[ist].coef *= exp_tau[ist]
-                    rho_update -= self.mol.states[ist].coef.conjugate() * self.mol.states[ist].coef
+            # Update coefficients (vectorized)
+            coefs = np.array([st.coef for st in self.mol.states])
+            mask = np.arange(self.mol.nst) != self.rstate
+            coefs[mask] *= exp_tau[mask]
+            rho_update -= np.sum(np.abs(coefs[mask]) ** 2)
 
-            self.mol.states[self.rstate].coef *= np.sqrt(rho_update / self.mol.rho[self.rstate, self.rstate])
+            coefs[self.rstate] *= np.sqrt(rho_update / self.mol.rho[self.rstate, self.rstate])
 
-            # Get density matrix elements from coefficients
+            # Write back coefficients
             for ist in range(self.mol.nst):
-                for jst in range(ist, self.mol.nst):
-                    self.mol.rho[ist, jst] = self.mol.states[ist].coef.conjugate() * self.mol.states[jst].coef
-                    self.mol.rho[jst, ist] = self.mol.rho[ist, jst].conjugate()
+                self.mol.states[ist].coef = coefs[ist]
+
+            # Get density matrix elements from coefficients (vectorized outer product)
+            self.mol.rho = np.outer(coefs.conj(), coefs)
 
         elif (self.elec_object == "density"):
             # save old running state element for update running state involved elements
             rho_old_rstate = self.mol.rho[self.rstate, self.rstate]
-            for ist in range(self.mol.nst):
-                for jst in range(ist, self.mol.nst):
-                    # Update density matrix. self.mol.rho[ist, rstate] suffers half-update because exp_tau[rstate] = 1
-                    self.mol.rho[ist, jst] *= exp_tau[ist] * exp_tau[jst]
-                    self.mol.rho[jst, ist] = self.mol.rho[ist, jst].conjugate()
 
-                if (ist != self.rstate):
-                    # Update rho[self.rstate, self.rstate] by subtracting other diagonal elements
-                    rho_update -= self.mol.rho[ist, ist]
+            # Update density matrix with exp_tau outer product (vectorized)
+            exp_tau_matrix = np.outer(exp_tau, exp_tau)
+            self.mol.rho *= exp_tau_matrix
+            # Enforce Hermiticity
+            self.mol.rho = np.triu(self.mol.rho) + np.triu(self.mol.rho, k=1).conj().T
 
-            # Update rho[self.rstate, ist] and rho[ist, self.rstate] by using rho_update and rho_old_rstate
-            # rho[self.rstate, self.rstate] automatically update by double counting
-            for ist in range(self.mol.nst):
-                self.mol.rho[ist, self.rstate] *= np.sqrt(rho_update / rho_old_rstate)
-                self.mol.rho[self.rstate, ist] *= np.sqrt(rho_update / rho_old_rstate)
+            # Update rho_update by subtracting other diagonal elements (vectorized)
+            mask = np.arange(self.mol.nst) != self.rstate
+            rho_update -= np.sum(np.diag(self.mol.rho)[mask])
+
+            # Update rho[self.rstate, ist] and rho[ist, self.rstate] (vectorized)
+            scale = np.sqrt(rho_update / rho_old_rstate)
+            self.mol.rho[:, self.rstate] *= scale
+            self.mol.rho[self.rstate, :] *= scale
 
     def calculate_force(self):
         """ Routine to calculate the forces

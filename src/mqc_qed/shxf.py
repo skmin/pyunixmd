@@ -563,11 +563,12 @@ class SHXF(MQC_QED):
         self.event["DECO"].append(f"Destroy auxiliary trajectories: decohered to {one_st} state")
 
         if (self.elec_object == "coefficient"):
+            # Vectorized coefficient reset
+            coefs = np.array([st.coef_a for st in self.pol.pol_states])
+            coefs_new = np.where(np.arange(self.pol.pst) == one_st,
+                                  coefs / np.abs(coefs).real, 0. + 0.j)
             for ist in range(self.pol.pst):
-                if (ist == one_st):
-                    self.pol.pol_states[ist].coef_a /= np.absolute(self.pol.pol_states[ist].coef_a).real
-                else:
-                    self.pol.pol_states[ist].coef_a = 0. + 0.j
+                self.pol.pol_states[ist].coef_a = coefs_new[ist]
 
     def aux_propagator(self):
         """ Routine to propagate auxiliary molecule
@@ -624,11 +625,12 @@ class SHXF(MQC_QED):
         fac = 1. - self.pol.rho_a.real[cstate, cstate]
 
         if (self.elec_object == "coefficient"):
+            # Vectorized coefficient collapse
+            coefs = np.array([st.coef_a for st in self.pol.pol_states])
+            coefs_new = np.where(np.arange(self.pol.pst) == cstate,
+                                  0. + 0.j, coefs / np.sqrt(fac))
             for ist in range(self.pol.pst):
-                if (ist == cstate):
-                    self.pol.pol_states[ist].coef_a = 0. + 0.j
-                else:
-                    self.pol.pol_states[ist].coef_a /= np.sqrt(fac)
+                self.pol.pol_states[ist].coef_a = coefs_new[ist]
 
         self.pol.rho_a[cstate,:] = 0. + 0.j
         self.pol.rho_a[:,cstate] = 0. + 0.j
@@ -637,14 +639,16 @@ class SHXF(MQC_QED):
     def get_phase(self):
         """ Routine to calculate phase term
         """
-        for ist in range(self.pol.pst):
-            if (self.l_coh[ist]):
-                if (self.l_first[ist]):
-                    self.phase[ist] = 0.
-                else:
-                    for iat in range(self.aux.nat):
-                        self.phase[ist, iat] += self.aux.mass[iat] * \
-                            (self.aux.vel[ist, iat] - self.aux.vel_old[ist, iat])
+        # Vectorized phase calculation
+        l_coh = np.array(self.l_coh)  # (pst,)
+        l_first = np.array(self.l_first)  # (pst,)
+        # mass: (nat,), vel: (pst, nat, ndim), vel_old: (pst, nat, ndim)
+        vel_diff = self.aux.vel - self.aux.vel_old  # (pst, nat, ndim)
+        phase_update = self.aux.mass[np.newaxis, :, np.newaxis] * vel_diff  # (pst, nat, ndim)
+        # Apply conditions: l_coh and not l_first
+        update_mask = l_coh[:, np.newaxis, np.newaxis] & ~l_first[:, np.newaxis, np.newaxis]
+        self.phase = np.where(l_first[:, np.newaxis, np.newaxis], 0., self.phase)
+        self.phase += np.where(update_mask, phase_update, 0.)
 
     def append_sigma(self):
         """ Routine to append sigma values when single float number is provided
@@ -767,9 +771,7 @@ class SHXF(MQC_QED):
             :param integer istep: Current MD step
         """
         ctemp = self.pol.ekin * 2. / float(self.pol.ndof) * au_to_K
-        norm = 0.
-        for ist in range(self.pol.pst):
-            norm += self.pol.rho_a.real[ist, ist]
+        norm = np.sum(np.diag(self.pol.rho_a.real))
 
         # Print INFO for each step
         INFO = f" INFO{istep + 1:>9d}{self.rstate:>5d}"

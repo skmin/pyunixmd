@@ -525,11 +525,12 @@ class SHXF(MQC):
         self.event["DECO"].append(f"Destroy auxiliary trajectories: decohered to {one_st} state")
 
         if (self.elec_object == "coefficient"):
+            # Vectorized coefficient reset
+            coefs = np.array([st.coef for st in self.mol.states])
+            coefs_new = np.where(np.arange(self.mol.nst) == one_st,
+                                  coefs / np.abs(coefs).real, 0. + 0.j)
             for ist in range(self.mol.nst):
-                if (ist == one_st):
-                    self.mol.states[ist].coef /= np.absolute(self.mol.states[ist].coef).real
-                else:
-                    self.mol.states[ist].coef = 0. + 0.j
+                self.mol.states[ist].coef = coefs_new[ist]
 
     def aux_propagator(self):
         """ Routine to propagate auxiliary molecule
@@ -583,21 +584,17 @@ class SHXF(MQC):
         if (self.l_td_sigma):
             # TODO Only two-state case is implemented..
             if (self.l_first[0]):
-                for iat in range(self.aux.nat):
-                    for isp in range(self.aux.ndim):
-                        self.sigma[iat, isp] = 100000.
+                self.sigma[:, :] = 100000.
             else:
-                for iat in range(self.aux.nat):
-                    for isp in range(self.aux.ndim):
-                        if ((np.abs(self.aux.vel[0, iat, isp] - self.aux.vel[1, iat, isp])) * self.aux.mass[iat] > eps):
-                            self.sigma[iat, isp] = np.sqrt(0.5 * np.abs( \
-                                (self.aux.pos[0, iat, isp] - self.aux.pos[1, iat, isp]) \
-                                / (self.aux.vel[0, iat, isp] - self.aux.vel[1, iat, isp])) \
-                                / self.aux.mass[iat])
-                        else:
-                            for iat in range(self.aux.nat):
-                                for isp in range(self.aux.ndim):
-                                    self.sigma[iat, isp] = 100000.
+                # Vectorized sigma calculation
+                vel_diff = self.aux.vel[0] - self.aux.vel[1]  # (nat, ndim)
+                pos_diff = self.aux.pos[0] - self.aux.pos[1]  # (nat, ndim)
+                mass = self.aux.mass[:, np.newaxis]  # (nat, 1)
+                condition = np.abs(vel_diff) * mass > eps
+                # Safe division: use np.where to avoid division by zero
+                vel_diff_safe = np.where(condition, vel_diff, 1.)
+                sigma_val = np.sqrt(0.5 * np.abs(pos_diff / vel_diff_safe) / mass)
+                self.sigma = np.where(condition, sigma_val, 100000.)
 
     def collapse(self, cstate):
         """ Routine to collapse coefficient/density of a state to zero
@@ -605,11 +602,12 @@ class SHXF(MQC):
         fac = 1. - self.mol.rho.real[cstate, cstate]
 
         if (self.elec_object == "coefficient"):
+            # Vectorized coefficient collapse
+            coefs = np.array([st.coef for st in self.mol.states])
+            coefs_new = np.where(np.arange(self.mol.nst) == cstate,
+                                  0. + 0.j, coefs / np.sqrt(fac))
             for ist in range(self.mol.nst):
-                if (ist == cstate):
-                    self.mol.states[ist].coef = 0. + 0.j
-                else:
-                    self.mol.states[ist].coef /= np.sqrt(fac)
+                self.mol.states[ist].coef = coefs_new[ist]
 
         self.mol.rho[cstate,:] = 0. + 0.j
         self.mol.rho[:,cstate] = 0. + 0.j
@@ -618,14 +616,16 @@ class SHXF(MQC):
     def get_phase(self):
         """ Routine to calculate phase term
         """
-        for ist in range(self.mol.nst):
-            if (self.l_coh[ist]):
-                if (self.l_first[ist]):
-                    self.phase[ist] = 0.
-                else:
-                    for iat in range(self.aux.nat):
-                        self.phase[ist, iat] += self.aux.mass[iat] * \
-                            (self.aux.vel[ist, iat] - self.aux.vel_old[ist, iat])
+        # Vectorized phase calculation
+        l_coh = np.array(self.l_coh)  # (nst,)
+        l_first = np.array(self.l_first)  # (nst,)
+        # mass: (nat,), vel: (nst, nat, ndim), vel_old: (nst, nat, ndim)
+        vel_diff = self.aux.vel - self.aux.vel_old  # (nst, nat, ndim)
+        phase_update = self.aux.mass[np.newaxis, :, np.newaxis] * vel_diff  # (nst, nat, ndim)
+        # Apply conditions: l_coh and not l_first
+        update_mask = l_coh[:, np.newaxis, np.newaxis] & ~l_first[:, np.newaxis, np.newaxis]
+        self.phase = np.where(l_first[:, np.newaxis, np.newaxis], 0., self.phase)
+        self.phase += np.where(update_mask, phase_update, 0.)
 
     def append_sigma(self):
         """ Routine to append sigma values when single float number is provided
@@ -756,9 +756,7 @@ class SHXF(MQC):
             :param integer istep: Current MD step
         """
         ctemp = self.mol.ekin * 2. / float(self.mol.ndof) * au_to_K
-        norm = 0.
-        for ist in range(self.mol.nst):
-            norm += self.mol.rho.real[ist, ist]
+        norm = np.sum(np.diag(self.mol.rho.real))
 
         # Print INFO for each step
         INFO = f" INFO{istep + 1:>9d}{self.rstate:>5d}"

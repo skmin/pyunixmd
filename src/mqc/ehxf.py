@@ -446,56 +446,63 @@ class EhXF(MQC):
         if (self.l_td_sigma):
             # TODO Only two-state case is implemented..
             if (self.l_first[0]):
-                for iat in range(self.aux.nat):
-                    for isp in range(self.aux.ndim):
-                        self.sigma[iat, isp] = 100000.
+                self.sigma[:, :] = 100000.
             else:
-                for iat in range(self.aux.nat):
-                    for isp in range(self.aux.ndim):
-                        if ((np.abs(self.aux.vel[0, iat, isp] - self.aux.vel[1, iat, isp])) * self.aux.mass[iat] > eps):
-                            self.sigma[iat, isp] = np.sqrt(0.5 * np.abs( \
-                                (self.aux.pos[0, iat, isp] - self.aux.pos[1, iat, isp]) \
-                                / (self.aux.vel[0, iat, isp] - self.aux.vel[1, iat, isp])) \
-                                / self.aux.mass[iat])
-                        else:
-                            for iat in range(self.aux.nat):
-                                for isp in range(self.aux.ndim):
-                                    self.sigma[iat, isp] = 100000.
+                # Vectorized sigma calculation
+                vel_diff = self.aux.vel[0] - self.aux.vel[1]  # (nat, ndim)
+                pos_diff = self.aux.pos[0] - self.aux.pos[1]  # (nat, ndim)
+                mass = self.aux.mass[:, np.newaxis]  # (nat, 1)
+                condition = np.abs(vel_diff) * mass > eps
+                # Safe division: use np.where to avoid division by zero
+                vel_diff_safe = np.where(condition, vel_diff, 1.)
+                sigma_val = np.sqrt(0.5 * np.abs(pos_diff / vel_diff_safe) / mass)
+                self.sigma = np.where(condition, sigma_val, 100000.)
 
     def get_phase(self):
         """ Routine to calculate phase term
         """
-        for ist in range(self.mol.nst):
-            if (self.l_coh[ist]):
-                if (self.l_first[ist]):
-                    self.phase[ist] = 0.
-                else:
-                    for iat in range(self.aux.nat):
-                        self.phase[ist, iat] += self.aux.mass[iat] * \
-                            (self.aux.vel[ist, iat] - self.aux.vel_old[ist, iat])
+        # Vectorized phase calculation
+        l_coh = np.array(self.l_coh)  # (nst,)
+        l_first = np.array(self.l_first)  # (nst,)
+        # mass: (nat,), vel: (nst, nat, ndim), vel_old: (nst, nat, ndim)
+        vel_diff = self.aux.vel - self.aux.vel_old  # (nst, nat, ndim)
+        phase_update = self.aux.mass[np.newaxis, :, np.newaxis] * vel_diff  # (nst, nat, ndim)
+        # Apply conditions: l_coh and not l_first
+        update_mask = l_coh[:, np.newaxis, np.newaxis] & ~l_first[:, np.newaxis, np.newaxis]
+        self.phase = np.where(l_first[:, np.newaxis, np.newaxis], 0., self.phase)
+        self.phase += np.where(update_mask, phase_update, 0.)
 
     def calc_xf_force(self):
         """ Routine to calculate nuclear force originating from XF term
         """
-        # TODO: temporary calculation for qmom with state-dependency, will be removed in next PR
-        qmom = np.zeros((self.mol.nst, self.aux.nat, self.aux.ndim))
-        for ist in range(self.mol.nst):
-            if (self.l_coh[ist]):
-                for iat in range(self.aux.nat):
-                    qmom[ist, iat, :] += 0.5 * self.mol.rho.real[ist, ist] / self.aux.mass[iat] \
-                        / self.sigma[iat] ** 2. * (self.pos_0[iat, :] - self.aux.pos[ist, iat, :])
+        # Vectorized qmom calculation
+        l_coh = np.array(self.l_coh)  # (nst,)
+        rho_diag = np.diag(self.mol.rho.real)  # (nst,)
+        mass_inv = 1. / self.aux.mass  # (nat,)
+        sigma_inv2 = 1. / self.sigma ** 2  # (nat, ndim)
+        pos_diff = self.pos_0[np.newaxis, :, :] - self.aux.pos  # (nst, nat, ndim)
+        # qmom: (nst, nat, ndim)
+        qmom = 0.5 * rho_diag[:, np.newaxis, np.newaxis] * mass_inv[np.newaxis, :, np.newaxis] \
+            * sigma_inv2[np.newaxis, :, :] * pos_diff
+        # Apply l_coh mask
+        qmom = np.where(l_coh[:, np.newaxis, np.newaxis], qmom, 0.)
 
+        # Vectorized XF force calculation
+        # qmom_sum[ist, jst] = qmom[ist] + qmom[jst]: (nst, nst, nat, ndim)
+        qmom_sum = qmom[:, np.newaxis, :, :] + qmom[np.newaxis, :, :, :]
+        # phase_diff[ist, jst] = phase[ist] - phase[jst]: (nst, nst, nat, ndim)
+        phase_diff = self.phase[:, np.newaxis, :, :] - self.phase[np.newaxis, :, :, :]
+        # fac[ist, jst] = sum over (nat, ndim) of (qmom_sum * phase_diff) / (nst - 1)
+        fac = np.sum(qmom_sum * phase_diff, axis=(2, 3)) / (self.mol.nst - 1)  # (nst, nst)
+        # rho_prod[ist, jst] = rho[ist] * rho[jst]
+        rho_prod = rho_diag[:, np.newaxis] * rho_diag[np.newaxis, :]  # (nst, nst)
+        # l_coh mask for pairs
+        coh_mask = l_coh[:, np.newaxis] & l_coh[np.newaxis, :]  # (nst, nst)
+        # weight = rho_prod * fac where both states are coherent
+        weight = np.where(coh_mask, rho_prod * fac, 0.)  # (nst, nst)
+        # xf_force = sum over (ist, jst) of weight * phase_diff
         self.xf_force = np.zeros((self.mol.nat, self.mol.ndim))
-        for ist in range(self.mol.nst):
-            for jst in range(self.mol.nst):
-                if (self.l_coh[ist] and self.l_coh[jst]):
-                    fac = 0.
-                    for iat in range(self.aux.nat):
-                        fac += np.sum((qmom[ist, iat] + qmom[jst, iat]) * \
-                            (self.phase[ist, iat] - self.phase[jst, iat])) \
-                            / (self.mol.nst - 1)
-                    self.xf_force += self.mol.rho.real[ist, ist] * self.mol.rho.real[jst, jst] \
-                         * fac * (self.phase[ist] - self.phase[jst])
+        self.xf_force[0:self.aux.nat] = np.einsum('ij,ijab->ab', weight, phase_diff)
 
     def append_sigma(self):
         """ Routine to append sigma values when single float number is provided

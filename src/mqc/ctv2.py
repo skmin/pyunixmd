@@ -1,7 +1,7 @@
 from __future__ import division
 from lib.libctmqcv2 import el_run
 from mqc.mqc import MQC
-from misc import eps, au_to_K, au_to_A, call_name, typewriter, gaussian1d
+from misc import eps, au_to_K, au_to_A, call_name, typewriter, gaussian1d, close_files
 import os, shutil, textwrap
 import numpy as np
 import pickle
@@ -295,7 +295,11 @@ class CTv2(MQC):
                     break
             
             if(l_abort):
-                break 
+                break
+
+        # Close open file handles for all trajectory directories
+        for itraj in range(self.ntrajs):
+            close_files(unixmd_dirs[itraj])
 
         # Delete scratch directory
         if (not l_save_scr):
@@ -621,8 +625,8 @@ class CTv2(MQC):
         # K_bo = 0.5 * G_{\nu, ij}/M \cdot D_{ij}
         # and/or
         # K = 0.5 * P_{\nu}/M \cdot D_{ij}
-        self.K = np.zeros((self.ntrajs, self.nst, self.nst))
-        self.K_bo = np.zeros((self.ntrajs, self.nst, self.nst))
+        self.K.fill(0.)
+        self.K_bo.fill(0.)
 
         inv_mass = 1. / self.mol.mass[0:self.nat_qm]  # (nat_qm,)
 
@@ -693,9 +697,9 @@ class CTv2(MQC):
         pos = np.array([mol.pos for mol in self.mols])  # (ntrajs, nat_qm, ndim)
         rho = np.array([np.diag(mol.rho.real) for mol in self.mols])  # (ntrajs, nst)
 
-        self.g_I = np.zeros((self.ntrajs))
-        self.g_i_I = np.ones((self.nst, self.ntrajs))
-        self.g_i_IJ = np.ones((self.nst, self.ntrajs, self.ntrajs))
+        self.g_I.fill(0.)
+        self.g_i_I.fill(1.)
+        self.g_i_IJ.fill(1.)
 
         rho_avg = np.sum(rho, axis=0) / self.ntrajs  # (nst,)
 
@@ -733,7 +737,7 @@ class CTv2(MQC):
         self.g_I[:] = np.sum(self.g_i_I, axis=0)  # |\chi|^2
 
         # Vectorized pseudo_pop calculation
-        self.pseudo_pop = np.zeros((self.nst, self.ntrajs))
+        self.pseudo_pop.fill(0.)
         if (self.l_real_pop):
             self.pseudo_pop = rho.T  # (nst, ntrajs)
         else:

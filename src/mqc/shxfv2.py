@@ -1,7 +1,7 @@
 from __future__ import division
 from lib.libmqcxfv2 import el_run
 from mqc.mqc import MQC
-from misc import eps, au_to_K, au_to_A, call_name, typewriter
+from misc import eps, au_to_K, au_to_A, call_name, typewriter, close_files
 import random, os, shutil, textwrap
 import numpy as np
 import pickle
@@ -308,6 +308,9 @@ class SHXFv2(MQC):
             if (self.l_asymp and det > 0. and np.abs(self.mol.pos[0, 0]) > np.abs(self.x_fin)):
                 print(f"Trajectory reached asymptotic region")
                 break
+
+        # Close open file handles for this directory
+        close_files(unixmd_dir)
 
         # Delete scratch directory
         if (not l_save_scr):

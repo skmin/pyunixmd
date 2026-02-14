@@ -5,16 +5,18 @@ from Cython.Distutils import build_ext
 import numpy as np
 
 # Selects the type of math libraries to be used; Available options: lapack, mkl
-math_lib_type = "mkl"
-#math_lib_type = "lapack"
+#math_lib_type = "mkl"
+math_lib_type = "lapack"
 # Directories including the math libraries
-math_lib_dir = "${MKLROOT}/lib/intel64/"
-#math_lib_dir = "/my_disk/my_name/lapack/"
+#math_lib_dir = "${MKLROOT}/lib/intel64/"
+math_lib_dir = "/opt/homebrew/lib/"
 
 sourcefile1 = ["./src/lib/mqc/el_propagator.pyx", "./src/lib/mqc/rk4.c", "./src/lib/mqc/exponential.c"]
 sourcefile2 = ["./src/lib/mqc/el_propagator_xf.pyx", "./src/lib/mqc/rk4_xf.c","./src/lib/mqc/exponential_xf.c"]
 sourcefile3 = ["./src/lib/mqc/el_propagator_ct.pyx", "./src/lib/mqc/rk4_ct.c"]
 sourcefile4 = ["./src/lib/cioverlap/cioverlap.pyx", "./src/lib/cioverlap/tdnac.c"]
+sourcefile5 = ["./src/lib/mqc/el_propagator_ctv2.pyx", "./src/lib/mqc/rk4_ctv2.c"]
+sourcefile6 = ["./src/lib/mqc/el_propagator_xfv2.pyx", "./src/lib/mqc/rk4_xfv2.c"]
 
 sourcefile1_qed = ["./src/lib/mqc_qed/el_propagator.pyx", "./src/lib/mqc_qed/rk4.c", "./src/lib/mqc_qed/exponential.c"]
 sourcefile2_qed = ["./src/lib/mqc_qed/el_propagator_xf.pyx", "./src/lib/mqc_qed/rk4_xf.c", "./src/lib/mqc_qed/exponential_xf.c"]
@@ -27,7 +29,7 @@ lib_dirs = []
 extra_flags = []
 
 if (math_lib_type == "lapack"):
-    libs += ["lapack", "refblas", "gfortran"]
+    libs += ["lapack", "blas", "gfortran"]
     lib_dirs += [math_lib_dir]
     extra_flags += ["-D HAVE_LAPACK"]
 elif (math_lib_type == "mkl"):
@@ -46,6 +48,8 @@ extensions = [
     Extension("libmqcxf", sources=sourcefile2, include_dirs=[np.get_include()], \
         libraries=libs, library_dirs=lib_dirs),
     Extension("libctmqc", sources=sourcefile3, include_dirs=[np.get_include()]),
+    Extension("libctmqcv2", sources=sourcefile5, include_dirs=[np.get_include()]),
+    Extension("libmqcxfv2", sources=sourcefile6, include_dirs=[np.get_include()]),
     Extension("libcioverlap", sources=sourcefile4, include_dirs=[np.get_include()], \
         libraries=libs, library_dirs=lib_dirs, extra_compile_args=extra_flags),
     # Electronic propagation in MQC_QED dynamics

@@ -63,7 +63,21 @@ ALL_CASES = [
     # CT
     pytest.param(
         MQCArgs(md=5), "TEST-CT", marks=(pytest.mark.mqc, pytest.mark.ct)
-    )
+    ),
+
+    # CTv2
+    pytest.param(
+        MQCArgs(md=6), "TEST-CTv2", marks=(pytest.mark.mqc, pytest.mark.ctv2)
+    ),
+
+    # SHXFv2
+    *[
+        pytest.param(
+            MQCArgs(md=7, rescale=r, reject=j), f"TEST-SHXFv2-{KEY_RESCALE[r]}{KEY_REJECT[j]}",
+            marks=(pytest.mark.mqc, pytest.mark.shxfv2)
+        )
+        for r in range(4) for j in range(2)
+     ],
 ]
 
 def _load_numeric(path: Path, is_xyz: bool):
@@ -97,15 +111,15 @@ def test_mqc_case(args, case_id):
     if args.md != 0:    # not BOMD
         targets += ["BOPOP", "NACME"]
 
-    if args.md in (2, 3, 4):   # have the SH feature
+    if args.md in (2, 3, 4, 7):   # have the SH feature (SH, SHXF, EhXF, SHXFv2)
         targets += ["SHSTATE", "SHPROB"]
 
     # Compare test results and the reference
     case_id = Path(case_id)
     for tg in targets:
-        if args.md != 5:    # not CT
+        if args.md not in (5, 6):    # not CT or CTv2
             _compare_file(case_id / "md" / tg, REF_ROOT / case_id / "md" / tg, tg)
-        else:    # CT
+        else:    # CT or CTv2
             _compare_file(case_id / "TRAJ_1" / "md" / tg, REF_ROOT / case_id / "TRAJ_1" / "md" / tg, tg)
             _compare_file(case_id / "TRAJ_2" / "md" / tg, REF_ROOT / case_id / "TRAJ_2" / "md" / tg, tg)
 

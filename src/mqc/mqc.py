@@ -114,7 +114,7 @@ class MQC(object):
             raise ValueError (f"( {self.md_type}.{call_name()} ) {error_message} ( {error_vars} )")
 
         # Check whether NACVs are needed for Ehrenfest dynamics or not
-        if (self.md_type in ["CT", "Eh", "EhXF"]):
+        if (self.md_type in ["CT", "CTv2", "Eh", "EhXF"]):
             if (self.mol.l_nacme):
                 error_message = "CTMQC or Ehrenfest dynamics needs evaluation of NACVs, check your QM object!"
                 error_vars = f"(QM) qm_prog.qm_method = {qm.qm_prog}.{qm.qm_method}"
@@ -137,7 +137,7 @@ class MQC(object):
             self.check_qmmm(qm, mm)
 
         # Exception for CTMQC/Ehrenfest with QM/MM
-        if ((self.md_type in ["CT", "Eh", "EhXF"]) and (mm != None)):
+        if ((self.md_type in ["CT", "CTv2", "Eh", "EhXF"]) and (mm != None)):
             error_message = "QM/MM calculation is not compatible with CTMQC or Ehrenfest now!"
             error_vars = f"mm = {mm}"
             raise NotImplementedError (f"( {self.md_type}.{call_name()} ) {error_message} ( {error_vars} )")
@@ -154,7 +154,7 @@ class MQC(object):
             mm_log_dir = []
 
         dir_tmp = os.path.join(os.getcwd(), output_dir)
-        if (self.md_type != "CT"):
+        if (self.md_type not in ["CT", "CTv2"]):
             base_dir.append(dir_tmp)
         else:
             for itraj in range(self.ntrajs):
@@ -228,7 +228,7 @@ class MQC(object):
 
         os.chdir(base_dir[0])
 
-        if (self.md_type != "CT"):
+        if (self.md_type not in ["CT", "CTv2"]):
             return base_dir[0], unixmd_dir[0], samp_bin_dir[0], qm_log_dir[0], mm_log_dir[0]
         else:
             return base_dir, unixmd_dir, samp_bin_dir, qm_log_dir, mm_log_dir
@@ -236,6 +236,8 @@ class MQC(object):
     def cl_update_position(self):
         """ Routine to update nuclear positions
         """
+        self.mol.vel_old[:, :] = self.mol.vel[:, :]
+        self.mol.pos_old[:, :] = self.mol.pos[:, :]
         self.mol.vel += 0.5 * self.dt * self.rforce / np.column_stack([self.mol.mass] * self.mol.ndim)
         self.mol.pos += self.dt * self.mol.vel
 
@@ -353,7 +355,7 @@ class MQC(object):
                 dynamics_info += f"  Nonadiabatic Couplings   = {'Yes':>16s}\n"
 
         # Print surface hopping variables
-        if (self.md_type in ["SH", "SHXF"]):
+        if (self.md_type in ["SH", "SHXF", "SHXFv2"]):
             dynamics_info += f"\n  Rescaling after Hop      = {self.hop_rescale:>16s}\n"
             dynamics_info += f"  Rescaling after Reject   = {self.hop_reject:>16s}\n"
 
@@ -365,7 +367,7 @@ class MQC(object):
                     dynamics_info += f"  Energy Constant          = {self.edc_parameter:>16.6f}\n"
 
         # Print XF variables
-        if (self.md_type in ["SHXF", "EhXF"]):
+        if (self.md_type in ["SHXF", "SHXFv2", "EhXF"]):
             # Print density threshold used in decoherence term
             dynamics_info += f"\n  Density Threshold        = {self.rho_threshold:>16.6f}"
             # Print sigma values
@@ -444,7 +446,7 @@ class MQC(object):
             typewriter(tmp, unixmd_dir, "NACME", "w")
 
         # file header for SH-based methods
-        if (self.md_type in ["SH", "SHXF", "EhXF"]):
+        if (self.md_type in ["SH", "SHXF", "SHXFv2", "EhXF"]):
             tmp = f'{"#":5s}{"Step":8s}{"Running State":10s}'
             typewriter(tmp, unixmd_dir, "SHSTATE", "w")
 
@@ -452,7 +454,7 @@ class MQC(object):
             typewriter(tmp, unixmd_dir, "SHPROB", "w")
 
         # file header for XF-based methods
-        if (self.md_type in ["SHXF", "EhXF", "CT"]):
+        if (self.md_type in ["SHXF", "SHXFv2", "EhXF", "CT", "CTv2"]):
             if (self.verbosity >= 1):
                 tmp = f'{"#":5s} Time-derivative Density Matrix by decoherence: population; see the manual for detail orders'
                 typewriter(tmp, unixmd_dir, "DOTPOPDEC", "w")

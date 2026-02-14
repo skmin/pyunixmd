@@ -57,7 +57,9 @@ class Molecule(object):
 
         # Initialize geometry
         self.pos = []
+        self.pos_old = []
         self.vel = []
+        self.vel_old = []
         self.mass = []
         self.symbols = []
         self.read_geometry(geometry)
@@ -187,6 +189,7 @@ class Molecule(object):
             fac_pos = A_to_au
 
         self.pos = np.array(self.pos) * fac_pos
+        self.pos_old = np.copy(self.pos)
 
         if (self.unit_vel == 'au'):
             fac_vel = 1.
@@ -196,6 +199,7 @@ class Molecule(object):
             fac_vel = A_to_au / fs_to_au
 
         self.vel = np.array(self.vel) * fac_vel
+        self.vel_old = np.copy(self.vel)
 
     def adjust_nac(self):
         """ Adjust phase of nonadiabatic couplings (vectorized)

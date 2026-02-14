@@ -11,7 +11,7 @@ from misc import data
 
 @dataclass(frozen=True)
 class MQCArgs:
-    md: int = 3      # the MQC method (0: BOMD, 1: Eh, 2: SH, 3: SHXF, 4: EhXF, 5: CT)
+    md: int = 3      # the MQC method (0: BOMD, 1: Eh, 2: SH, 3: SHXF, 4: EhXF, 5: CT, 6: CTv2, 7: SHXFv2)
     rescale: int = 3 # the hop rescale option (0: energy, 1: velocity, 2: momentum, 3: augment)
     reject: int = 1  # the hop reject option (0: keep, 1: reverse)
     width: int = 0   # the width scheme in XF (0: frozen Gaussian as 0.1 Bohr, 1: TD)
@@ -86,6 +86,18 @@ X1       -2.0     0.02
         mol1 = copy.deepcopy(mol)
         mol1.pos[0, 0] = -1.9
         md = mqc.CT(molecules=[mol, mol1], nsteps=nsteps, nesteps=1, dt=5.0, unit_dt="au", istates=[1, 1])
+
+    elif args.md == 6:  # CTv2
+        out_dir += "-CTv2"
+        mol1 = copy.deepcopy(mol)
+        mol1.pos[0, 0] = -1.9
+        md = mqc.CTv2(molecules=[mol, mol1], nsteps=nsteps, nesteps=1, dt=5.0, unit_dt="au", istates=[1, 1])
+
+    elif args.md == 7:  # SHXFv2
+        out_dir += "-SHXFv2"
+        md = mqc.SHXFv2(molecule=mol, nsteps=nsteps, nesteps=1, dt=5.0, unit_dt="au", sigma=0.1, istate=1)
+        suffix, md.hop_rescale, md.hop_reject = MOMENTUM_JUMP_SCHEME[(args.rescale, args.reject)]
+        out_dir += suffix
 
     else:
         raise ValueError(f"Invalid md={args.md}")

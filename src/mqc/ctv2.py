@@ -749,7 +749,7 @@ class CTv2(MQC):
         sigma_sq = self.sigma ** 2  # (nst, nat_qm, ndim)
         inv_sigma_sq = np.where(sigma_sq > self.small, 1.0 / sigma_sq, 0.0)  # (nst, nat_qm, ndim)
         # slope: (ntrajs, nat_qm, ndim) = -sum over ist of pseudo_pop[ist, itraj] * inv_sigma_sq[ist, iat, isp]
-        self.slope = -np.einsum('st,sab->tab', self.pseudo_pop.T, inv_sigma_sq)
+        self.slope = -np.einsum('st,sab->tab', self.pseudo_pop, inv_sigma_sq)
 
         if (self.l_crunch):
             # Vectorized slope_bo calculation
@@ -798,7 +798,7 @@ class CTv2(MQC):
             # Vectorized: intercept = -sum_ist(pseudo_pop[ist] * avg_R[ist] / sigma[ist]^2)
             # pseudo_pop: (nst, ntrajs), avg_R: (nst, nat_qm, ndim), inv_sigma_sq: (nst, nat_qm, ndim)
             weighted_avg_R = self.avg_R * inv_sigma_sq  # (nst, nat_qm, ndim)
-            self.intercept = -np.einsum('st,sab->tab', self.pseudo_pop.T, weighted_avg_R)
+            self.intercept = -np.einsum('st,sab->tab', self.pseudo_pop, weighted_avg_R)
 
         # Calculate center from slope and intercept (safe division)
         slope_valid = np.abs(self.slope) >= self.small

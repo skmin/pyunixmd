@@ -101,7 +101,7 @@ class CTv2(MQC):
         elec_object="coefficient", propagator="rk4", l_print_dm=True, l_adj_nac=True, rho_threshold=0.01, \
         init_coefs=None, unit_dt="fs", out_freq=1, verbosity=0, \
         l_crunch=True, l_dc_w_mom=True, l_traj_gaussian=False, \
-        t_cons=2, l_etot0=True, l_lap=False,\
+        t_cons=2, l_etot0=True, l_lap=False, sigma=None,\
         l_en_cons=False, artifact_expon=0.2, l_asymp=False, x_fin=25.0, \
         l_real_pop=True, t_pc=1, use_gpu=False, ncpus=1):
         # Save name of MQC dynamics
@@ -194,6 +194,13 @@ class CTv2(MQC):
         self.t_pc = t_pc
         self.t_cons = t_cons
         self.l_etot0 = l_etot0
+
+        if (sigma is not None):
+            assert sigma.shape == self.sigma.shape, "Sigma dimension doesn't match"
+            self.sigma = np.copy(sigma)
+            self.l_sigma_fix = True
+        else:
+            self.l_sigma_fix = False
 
         # Variables for aborting dynamics when all trajectories reach asymptotic region
         self.l_asymp = l_asymp
@@ -583,10 +590,15 @@ class CTv2(MQC):
 
         # Vectorized state momentum calculation
         energies = np.array([st.energy for st in self.mol.states])  # (nst,)
-        if (self.l_etot0):
-            alpha = (self.etot0[itrajectory] - energies) / self.mol.ekin
+        if (self.mol.ekin < 1e-12):
+            vel_mass = self.mol.vel[:self.nat_qm, :] * self.mol.mass[:self.nat_qm, np.newaxis]  # (nat_qm, ndim)
+            self.mom[itrajectory, :, :, :] = vel_mass[np.newaxis, :, :]
+            return
         else:
-            alpha = (self.mol.etot - energies) / self.mol.ekin
+            if (self.l_etot0):
+                alpha = (self.etot0[itrajectory] - energies) / self.mol.ekin
+            else:
+                alpha = (self.mol.etot - energies) / self.mol.ekin
 
         alpha = np.maximum(alpha, 0.)  # Clip negative values
         sqrt_alpha = np.sqrt(alpha)  # (nst,)
@@ -781,7 +793,8 @@ class CTv2(MQC):
         # i and j are trajectory index.
         # -------------------------------------------------------------------
         # 1. Calculate variances for each trajectory
-        self.calculate_sigma()
+        if (not self.l_sigma_fix):
+            self.calculate_sigma()
 
         # 2-3. Calculate slope and center (fused on GPU if available)
         if self.use_gpu and self._gpu_kernels is not None:
@@ -871,7 +884,10 @@ class CTv2(MQC):
                     self.avg_R[ist, :, :] = 0.0
                     self.sigma[ist, :, :] = np.inf
                 else:
-                    self.sigma[ist, :, :] *= 1.06 * (rho_avg[ist] * self.ntrajs) ** (-self.artifact_expon)
+                    #self.sigma[ist, :, :] *= 1.06 * (rho_avg[ist] * self.ntrajs) ** (-self.artifact_expon)
+                    # jkha
+                    d = self.nat_qm * self.ndim
+                    self.sigma[ist, :, :] *= (4./(d+2)) ** (1./(d+4)) * (rho_avg[ist] * self.ntrajs) ** (-1./(d+4))
 
 
 

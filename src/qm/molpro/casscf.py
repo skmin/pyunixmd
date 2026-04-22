@@ -96,6 +96,8 @@ class CASSCF(Molpro):
             :param boolean calc_force_only: Logical to decide whether calculate force only
             :param object traj: Trajectory object containing the calculator and trajectory
         """
+        unixmd_dir = os.path.join(base_dir, "md") # jkha
+        self.scr_qm_dir = os.path.join(unixmd_dir, "scr_qm") # jkha
         if (not calc_force_only):
             self.copy_files(istep)
         super().get_data(base_dir, calc_force_only)
@@ -259,7 +261,7 @@ class CASSCF(Molpro):
         qm_command = os.path.join(self.qm_path, "molpro")
         # OpenMP setting
         os.environ["OMP_NUM_THREADS"] = "1"
-        command = f"{qm_command} -m {self.memory} -I int -W wfu --no-xml-output -d int -o log -g -s molpro.inp > tmp_log"
+        command = f"{qm_command} -m {self.memory} -n 1 -I int -W wfu --no-xml-output -d int -o log -g -s molpro.inp > tmp_log" # jkha
         os.system(command)
         os.remove("tmp_log")
         # Copy the output file to 'qm_log' directory
